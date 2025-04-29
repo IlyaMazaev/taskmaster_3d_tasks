@@ -1,0 +1,190 @@
+const STATES_DICT = {
+  0: 'в очереди',
+  1: 'выполняется',
+  2: 'приостановлена',
+  3: 'завершена',
+  4: 'отменена',
+  5: 'ошибка',
+  6: 'таймаут',
+  7: 'сбой узла',
+  8: 'вытеснена',
+  10: 'завершена по Deadline',
+  1024: 'остановлена системой'
+};
+
+const discreteFields = ["gpu_count", "cpu_cores_count", "state", "nodes_count"];
+
+function uniqueSorted(array) {
+  return [...new Set(array)].sort((a, b) => a - b);
+}
+
+function getAxisConfig(fieldName, label, values) {
+  if (fieldName === 'time_start' || fieldName === 'time_end') {
+    return { title: label };
+  }
+  if (discreteFields.includes(fieldName)) {
+    const ticks = uniqueSorted(values);
+    return {
+      title: label,
+      tickmode: 'array',
+      tickvals: ticks
+    };
+  }
+  if (fieldName === 'id'){
+    return { title: label, tickformat: '.0f' };
+  }
+  return { title: label };
+}
+
+function formatAsLocalString(dateObj) {
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const hours = String(dateObj.getHours()).padStart(2, '0');
+  const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+  const seconds = String(dateObj.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function convertFieldValues(fieldName, values) {
+  if (fieldName === 'time_start' || fieldName === 'time_end') {
+    return values.map(v => {
+      const dateObj = new Date(v);
+      return formatAsLocalString(dateObj);
+    });
+  } else if (fieldName === 'state') {
+    return values.map(v => STATES_DICT[v] ?? `неизвестно (${v})`);
+  } else {
+    return values;
+  }
+}
+
+
+console.log("variables:", variables);
+
+const xFieldName = variables.X_column || 'X';
+const yFieldName = variables.Y_column || 'Y';
+const zFieldName = variables.Z_column || 'Z';
+const colorFieldName = variables.COLOR_column || 'Z';
+
+const xLabel = xFieldName;
+const yLabel = yFieldName;
+const zLabel = zFieldName;
+
+
+const xField = data.series[0].fields.find(f => f.name === 'x');
+const yField = data.series[0].fields.find(f => f.name === 'y');
+const zField = data.series[0].fields.find(f => f.name === 'z');
+const jobIdField = data.series[0].fields.find(f => f.name === 'job_id');
+const userLoginField = data.series[0].fields.find(f => f.name === 'user_login');
+const timeStartField = data.series[0].fields.find(f => f.name === 'time_start');
+const timeEndField   = data.series[0].fields.find(f => f.name === 'time_end');
+const colorField  = data.series[0].fields.find(f => f.name === 'color_value');
+
+
+const xValuesRaw = xField.values.toArray();
+const yValuesRaw = yField.values.toArray();
+const zValuesRaw = zField.values.toArray();
+const jobIdValues = jobIdField.values.toArray();
+const userLoginValues = userLoginField.values.toArray();
+const timeStartRaw = timeStartField.values.toArray();
+const timeEndRaw   = timeEndField.values.toArray();
+const colorRaw   = colorField.values.toArray();
+
+
+const xValues = convertFieldValues(xFieldName, xValuesRaw);
+const yValues = convertFieldValues(yFieldName, yValuesRaw);
+const zValues = convertFieldValues(zFieldName, zValuesRaw);
+
+const selectedSizeColumn = variables.SIZE_column || 'duration';
+
+
+let sizeValues;
+if (selectedSizeColumn === 'duration') {
+  sizeValues = timeStartRaw.map((startVal, i) => {
+    const endVal = timeEndRaw[i];
+    const diff = Math.max(0, endVal - startVal);
+    return diff / 50000;
+  });
+} else if (selectedSizeColumn === 'disabled') {
+  sizeValues = new Array(xValues.length).fill(15);
+} else {
+  const sizeField = data.series[0].fields.find(f => f.name === 'size_value');
+  if (sizeField) {
+    sizeValues = sizeField.values.toArray();
+  } else {
+    sizeValues = timeStartRaw.map((startVal, i) => {
+      const endVal = timeEndRaw[i];
+      const diff = Math.max(0, endVal - startVal);
+      return diff / 50000;
+    });
+  }
+}
+
+const colorMin = Math.min(...colorRaw);
+const colorMax = Math.max(...colorRaw);
+
+
+const trace = {
+  x: xValues,
+  y: yValues,
+  z: zValues,
+  mode: 'markers',
+  type: 'scatter3d',
+  text: jobIdValues,           
+  customdata: userLoginValues,
+  marker: {
+    size: sizeValues,
+    sizemode: 'area',
+    sizeref: 2,
+    sizemin: 15,
+    sizemax: 25,
+    color: colorRaw,
+    line: {
+      width: 0
+  },
+  cmin: colorMin,
+  cmax: colorMax,
+  showscale: true,
+  colorscale: [
+  [0, 'green'],
+  [0.25, 'lightgreen'],
+  [0.5, 'yellow'],
+  [0.75, 'orange'],
+  [1, 'red']
+],
+  },
+  hovertemplate: `
+    Job ID: %{text}<br>
+    User Login: %{customdata}<br>
+    ${xLabel}: %{x}<br>
+    ${yLabel}: %{y}<br>
+    ${zLabel}: %{z}<br>
+    Duration: %{marker.size}
+    <extra></extra>
+  `
+};
+
+const xAxisConfig = getAxisConfig(xFieldName, xLabel, xValues);
+const yAxisConfig = getAxisConfig(yFieldName, yLabel, yValues);
+const zAxisConfig = getAxisConfig(zFieldName, zLabel, zValues);
+
+const layout = {
+  title: '',
+  scene: {
+    xaxis: xAxisConfig,
+    yaxis: yAxisConfig,
+    zaxis: zAxisConfig
+  }
+};
+
+const config = {
+  displayModeBar: true,
+  modeBarButtonsToAdd: ['resetCameraDefault3d']
+};
+
+return {
+  data: [trace],
+  layout: layout,
+  config: config
+};
